@@ -1,0 +1,13 @@
+# FK Color Studio 主题 —— 中性、克制，让 EPDM 颜色本身成为视觉主角
+# 而不是 Streamlit 默认的高饱和红色按钮。
+
+[theme]
+base = "light"
+primaryColor = "#4A4A4E"
+backgroundColor = "#FAFAF9"
+secondaryBackgroundColor = "#F1F0EE"
+textColor = "#232326"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false

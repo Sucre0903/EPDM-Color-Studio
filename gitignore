@@ -1,0 +1,16 @@
+# 离线便携环境（几百MB，且是本机相关的构建产物，用 build_portable_env.bat 可随时重新生成）
+python_embed/
+
+# 每个人自己的历史记录数据库，不需要共享/上传
+data/history.db
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# Streamlit 本地密钥（如果以后用到的话，绝不能上传）
+.streamlit/secrets.toml
+
+# 系统/编辑器杂项文件
+.DS_Store
+Thumbs.db
