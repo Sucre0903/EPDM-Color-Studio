@@ -23,6 +23,26 @@ function Invoke-Launch {
     }
 }
 
+function Test-CrlfLock {
+    param([string]$App, [string]$Entry)
+    $lockPath = Join-Path $App 'requirements-lock-win-amd64-py313.txt'
+    $manifestPath = Join-Path $App 'offline\manifest.json'
+    $lockBytes = [IO.File]::ReadAllBytes($lockPath)
+    $manifestBytes = [IO.File]::ReadAllBytes($manifestPath)
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    try {
+        $crlfLock = $utf8.GetString($lockBytes) -replace '\r?\n', "`r`n"
+        [IO.File]::WriteAllText($lockPath, $crlfLock, $utf8)
+        $manifest = $utf8.GetString($manifestBytes) | ConvertFrom-Json
+        $manifest.lock_sha256 = (Get-FileHash -LiteralPath $lockPath).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), $utf8)
+        Invoke-Launch $Entry @('--verify-offline')
+    } finally {
+        [IO.File]::WriteAllBytes($lockPath, $lockBytes)
+        [IO.File]::WriteAllBytes($manifestPath, $manifestBytes)
+    }
+}
+
 function Get-ActivePython {
     $environment = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'ZTColorStudio\studio-v14\environments') -Directory
     if (@($environment).Count -ne 1) { throw 'Expected a single environment key' }
@@ -103,6 +123,7 @@ try {
             $env:PIP_INDEX_URL = 'https://example.invalid/simple'
             $env:ZT_PYPI_INDEX_URL = $env:PIP_INDEX_URL
             Invoke-Launch $entry @('--verify-offline')
+            Test-CrlfLock $app $entry
             $manifest = Get-Content -Raw -LiteralPath (Join-Path $app 'offline\manifest.json') | ConvertFrom-Json
             $wheel = Join-Path (Join-Path $app 'offline') $manifest.wheels[0].path
             Move-Item -LiteralPath $wheel -Destination "$wheel.missing"

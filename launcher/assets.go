@@ -50,6 +50,7 @@ func (s *studio) verifyOffline() (string, error) {
 	}
 	pins := make(map[string]string)
 	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
