@@ -135,7 +135,7 @@ func run(check, verify, headless bool, port int) (result error) {
 	cmd := s.pythonCommand(context.Background(), python, "-m", "streamlit", "run", "app.py",
 		"--server.address", address, "--server.port", fmt.Sprint(port),
 		"--server.headless", fmt.Sprint(headless), "--browser.serverAddress", "localhost",
-		"--browser.gatherUsageStats", "false")
+		"--server.showEmailPrompt", "false", "--browser.gatherUsageStats", "false")
 	cmd.Stdout, cmd.Stderr = s.out, s.out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("运行 Streamlit [%s]：%w", python, err)

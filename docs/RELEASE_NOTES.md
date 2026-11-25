@@ -1,6 +1,9 @@
-# ZT Color Match Studio v14.1.0
+# ZT Color Match Studio v14.1.1
 
-V14 配色工作台现在提供两种 Windows 10 / 11 x64 发行包。两种发行包均包含
+本次修复未使用过 Streamlit 的 Windows 账号首次启动时，由邮箱提示导致的退出。
+旧版 v14.1.0 可只替换 `start.bat` 继续使用原先初始化的环境。
+
+两种 Windows 10 / 11 x64 发行包均包含
 批量配色、推荐方案 / 方案探索、手动配色、材料预览及 Excel / PNG / SVG 导出。
 
 | 发行包 | 适用场景 |

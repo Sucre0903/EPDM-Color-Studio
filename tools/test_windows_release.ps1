@@ -36,9 +36,18 @@ function Test-Health {
     $socket.Start()
     $port = $socket.LocalEndpoint.Port
     $socket.Stop()
-    $server = Start-Process -FilePath $Executable -ArgumentList @('--headless', '--port', $port) -PassThru
+    $previousProfile = $env:USERPROFILE
+    $previousEmailPrompt = $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT
+    $freshProfile = Join-Path $work ('Streamlit profile ' + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $freshProfile | Out-Null
+    $env:USERPROFILE = $freshProfile
+    $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = 'true'
+    $server = $null
     $healthy = $false
     try {
+        # Match the default interactive launch with no Streamlit credentials
+        # and without the headless option that also suppresses the email prompt.
+        $server = Start-Process -FilePath $Executable -ArgumentList @('--port', $port) -PassThru
         for ($i = 0; $i -lt 80; $i++) {
             $server.Refresh()
             if ($server.HasExited) { throw "Streamlit launcher exited $($server.ExitCode)" }
@@ -53,8 +62,15 @@ function Test-Health {
             }
         }
         if (!$healthy) { throw 'Streamlit health endpoint did not become ready' }
+        if (Test-Path -LiteralPath (Join-Path $freshProfile '.streamlit\credentials.toml')) {
+            throw 'Startup unexpectedly wrote Streamlit credentials'
+        }
     } finally {
-        if (!$server.HasExited) { & taskkill.exe /PID $server.Id /T /F | Out-Null }
+        if ($null -ne $server -and !$server.HasExited) {
+            & taskkill.exe /PID $server.Id /T /F | Out-Null
+        }
+        $env:USERPROFILE = $previousProfile
+        $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = $previousEmailPrompt
     }
 }
 

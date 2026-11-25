@@ -2,6 +2,7 @@
 setlocal DisableDelayedExpansion
 chcp 65001 >nul
 title ZT Color Match Studio
+set "STREAMLIT_SERVER_SHOW_EMAIL_PROMPT=false"
 if not exist "%~dp0ZTColorStudio.exe" (
   echo Windows launcher is missing. Extract the complete Windows Release ZIP.
   pause
