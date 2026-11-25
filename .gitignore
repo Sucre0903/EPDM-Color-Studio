@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.zt-runtime/
+offline/
+python_embed/
+dist/
+build/
+ZTColorStudio.exe
+distribution.json
+*.sqlite
+*.sqlite3
+*.db

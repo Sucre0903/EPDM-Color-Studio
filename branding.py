@@ -24,7 +24,7 @@ ACCENT = "#4A4A4E"        # 强调色（按钮等），克制的石墨灰，替�
 FONT_STACK = ("'Inter','Helvetica Neue','PingFang SC','Noto Sans CJK SC',"
              "'Microsoft YaHei',Arial,sans-serif")
 
-BRAND_NAME = "FK Color Studio"
+BRAND_NAME = "ZT Color Match Studio"
 BRAND_SUB = "EPDM Granule Mix Designer"
 
 _ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")

@@ -264,9 +264,74 @@ def _round_to_100(codes, hexes, pct_array):
     return comps
 
 
+def _plan_code_set(plan):
+    return frozenset(c["色号"] for c in plan["components"])
+
+
+def _plan_ratio_map(plan):
+    return {c["色号"]: c["比例"] for c in plan["components"]}
+
+
+def _plan_distance(a, b):
+    """
+    两个方案之间的「结构差异度」（0~1，越大越不像）：
+    - 用色集合的 Jaccard 距离（权重最高，颜色组合本身不同才是真正的
+      "配色思路不同"，而不是同一批颜色调了调比例）；
+    - 颜色数量是否不同（数量不同本身就是一种明显的结构差异）；
+    - 共同颜色的比例差异（哪怕用的颜色一样，主次比例结构差异大也算数）。
+    """
+    sa, sb = _plan_code_set(a), _plan_code_set(b)
+    union = sa | sb
+    inter = sa & sb
+    jaccard_dist = 1.0 - (len(inter) / len(union) if union else 1.0)
+    count_diff = 0.0 if len(sa) == len(sb) else 1.0
+    if inter:
+        ra, rb = _plan_ratio_map(a), _plan_ratio_map(b)
+        ratio_diff = sum(abs(ra[c] - rb[c]) for c in inter) / len(inter) / 100.0
+    else:
+        ratio_diff = 1.0
+    return 0.55 * jaccard_dist + 0.25 * count_diff + 0.2 * ratio_diff
+
+
+def _select_diverse_plans(results, k=6, de_margin=4.0, min_distance=0.12):
+    """
+    从已经算好、按 ΔE00 升序排列的 results 里（不重新搜索，零额外计算
+    开销），用「贪心最远点采样」挑出最多 k 个配色结构有明显区别的方案：
+    - 第一个固定是全局最优解（Best Match）；
+    - 之后每一轮都选「和已选方案集合最不像的」那个，保证方案之间彼此
+      有真实区别，而不是全部挤在最优解附近做几个比例的小调整；
+    - 只在 ΔE00 <= 最优解 + de_margin 的范围内挑选，保证每个方案对目标色
+      的还原度都过关；
+    - 如果剩下的候选和已选方案都太像（距离 < min_distance），提前停止，
+      不会为了凑数硬塞进去两个几乎一样的方案。
+    """
+    if not results:
+        return []
+    best_de = results[0]["delta_e"]
+    pool = [r for r in results if r["delta_e"] <= best_de + de_margin]
+    if not pool:
+        pool = results[:1]
+
+    selected = [pool[0]]
+    remaining = pool[1:]
+    while remaining and len(selected) < k:
+        best_r, best_score = None, -1.0
+        for r in remaining:
+            score = min(_plan_distance(r, s) for s in selected)
+            if score > best_score:
+                best_score = score
+                best_r = r
+        if best_r is None or best_score < min_distance:
+            break
+        selected.append(best_r)
+        remaining.remove(best_r)
+    return selected
+
+
 def search_recipe(target_hex, total_weight=100.0, material="EPDM",
                   n_colors=4, use_accent=True, accent_pct=DEFAULT_ACCENT_PCT,
                   floor_pct=DEFAULT_FLOOR_PCT, locked_codes=None,
+                  excluded_codes=None, explore_mode=False,
                   csv_path="data/fk_colors.csv"):
     """
     主入口。n_colors 为「严格使用」的颗粒颜色数量（不会被自动减少）。
@@ -274,16 +339,29 @@ def search_recipe(target_hex, total_weight=100.0, material="EPDM",
     locked_codes：必须强制参与配比的色号列表（如设计师指定的品牌色/库存色），
                  不会被算法剔除；若数量超过 n_colors 可容纳的主色数，
                  会自动扩容颜色数量以容纳所有锁定色（并在返回值里说明）。
+    excluded_codes：本次搜索完全不考虑的色号列表（如某些颗粒缺货/工厂
+                   临时不想用），效果等价于把这些颜色暂时从色库里拿掉；
+                   若某色号同时出现在 locked_codes 和 excluded_codes 里，
+                   按锁定处理（锁定的约束更明确）。
+    explore_mode：False（默认，Best Match）只返回 1 个最优方案；
+                 True（Explore，方案探索）在色差可接受范围内，从已经
+                 算好的候选池里用多样性筛选挑出最多 6 个配色结构有明显
+                 区别的方案（不同颜色组合/数量/主次比例结构），而不是
+                 简单调亮度——不需要额外的搜索开销。
     返回 dict：target_hex / total_weight / material / n_colors /
-              used_accent / accent_code / locked_codes / notes /
-              recommended / darker / brighter。
+              used_accent / accent_code / locked_codes / excluded_codes /
+              notes / recommended / explore。
+              explore 是一个列表，Best Match 模式下只有 1 项（和
+              recommended 相同）；Explore 模式下有多项，第一项就是
+              recommended，后面是多样性筛选出的其它方案。
     """
     n_colors = int(max(2, min(6, n_colors)))
     accent_pct = float(max(0.0, min(accent_pct, 30.0)))
     notes = []
 
-    df = load_library(csv_path)
-    lib_codes = set(df["色号"])
+    df_full = load_library(csv_path)
+    lib_codes = set(df_full["色号"])
+
     locked_codes = [c.strip() for c in (locked_codes or []) if c and c.strip()]
     valid_locked, invalid_locked = [], []
     for c in locked_codes:
@@ -295,6 +373,21 @@ def search_recipe(target_hex, total_weight=100.0, material="EPDM",
     if len(locked_codes) > MAX_LOCKED:
         notes.append(f"锁定色号过多，仅保留前 {MAX_LOCKED} 个：{', '.join(locked_codes[:MAX_LOCKED])}")
         locked_codes = locked_codes[:MAX_LOCKED]
+
+    excluded_codes = [c.strip() for c in (excluded_codes or []) if c and c.strip()]
+    valid_excluded, invalid_excluded = [], []
+    for c in excluded_codes:
+        (valid_excluded if c in lib_codes else invalid_excluded).append(c)
+    if invalid_excluded:
+        notes.append(f"排除色号未在色库中找到，已忽略：{', '.join(invalid_excluded)}")
+    excluded_codes = list(dict.fromkeys(valid_excluded))
+    conflict = set(excluded_codes) & set(locked_codes)
+    if conflict:
+        notes.append(f"以下色号同时被锁定和排除，按锁定处理：{', '.join(sorted(conflict))}")
+        excluded_codes = [c for c in excluded_codes if c not in conflict]
+
+    df = df_full[~df_full["色号"].isin(excluded_codes)].reset_index(drop=True) \
+        if excluded_codes else df_full
 
     candidates, all_records = _build_candidates(target_hex, df)
     target_lab = hex_to_lab(target_hex)
@@ -380,19 +473,10 @@ def search_recipe(target_hex, total_weight=100.0, material="EPDM",
     results.sort(key=lambda r: r["delta_e"])
     recommended = results[0]
 
-    def _differs(a, b):
-        if b is None:
-            return True
-        ka = tuple(sorted((c["色号"], c["比例"]) for c in a["components"]))
-        kb = tuple(sorted((c["色号"], c["比例"]) for c in b["components"]))
-        return ka != kb
-
-    darker = next((r for r in results
-                   if r["mixed_L"] < recommended["mixed_L"] - 1
-                   and _differs(r, recommended)), None)
-    brighter = next((r for r in results
-                     if r["mixed_L"] > recommended["mixed_L"] + 1
-                     and _differs(r, recommended) and _differs(r, darker)), None)
+    if explore_mode:
+        explore = _select_diverse_plans(results, k=6)
+    else:
+        explore = [recommended]
 
     def _attach_weight(plan):
         if plan is None:
@@ -409,10 +493,11 @@ def search_recipe(target_hex, total_weight=100.0, material="EPDM",
         "used_accent": accent is not None,
         "accent_code": accent["色号"] if accent else None,
         "locked_codes": locked_codes,
+        "excluded_codes": excluded_codes,
+        "explore_mode": explore_mode,
         "notes": notes,
         "recommended": _attach_weight(recommended),
-        "darker": _attach_weight(darker),
-        "brighter": _attach_weight(brighter),
+        "explore": [_attach_weight(p) for p in explore],
     }
 
 

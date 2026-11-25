@@ -209,12 +209,12 @@ def draw_sample(mixed_hex, target_hex, components,
     )
 
     n_rows = len(components)
-    row_h = 30
+    row_h = 38
     legend_top = py + S + 34
-    legend_h = 30 + n_rows * row_h
+    legend_h = 34 + n_rows * row_h
     footer_h = 34
     H = legend_top + legend_h + footer_h
-    W = 900
+    W = 980
 
     bg = _hex_to_rgb_tuple(PAPER)
     img = Image.new("RGB", (W, H), bg)
@@ -244,8 +244,8 @@ def draw_sample(mixed_hex, target_hex, components,
     draw.text((100, 48), BRAND_SUB.upper(), font=f_brand_sub, fill=ink_faint_rgb)
     draw.line([(60, header_h - 14), (W - 60, header_h - 14)], fill=border_rgb, width=1)
 
-    f_label = _load_font(19)
-    f_small = _load_font(16)
+    f_label = _load_font(23)
+    f_small = _load_font(19)
     draw.text((60, header_h + 2), f"材料：{material}　颗粒尺度：{avg_grain_px:.0f}px",
               font=f_small, fill=ink_faint_rgb)
 
@@ -259,34 +259,34 @@ def draw_sample(mixed_hex, target_hex, components,
     rx = px + S + 44
     ry = py + 2
     draw.text((rx, ry), "目标色", font=f_label, fill=ink_soft_rgb)
-    draw.rounded_rectangle([rx, ry + 26, rx + 62, ry + 88], radius=8,
+    draw.rounded_rectangle([rx, ry + 30, rx + 74, ry + 104], radius=10,
                            fill=_hex_to_rgb_tuple(target_hex), outline=border_rgb)
-    draw.text((rx + 72, ry + 48), target_hex.upper(), font=f_small, fill=ink_soft_rgb)
+    draw.text((rx + 86, ry + 56), target_hex.upper(), font=f_small, fill=ink_soft_rgb)
 
-    draw.text((rx, ry + 106), "感知混合色", font=f_label, fill=ink_soft_rgb)
-    draw.rounded_rectangle([rx, ry + 132, rx + 62, ry + 194], radius=8,
+    draw.text((rx, ry + 128), "感知混合色", font=f_label, fill=ink_soft_rgb)
+    draw.rounded_rectangle([rx, ry + 158, rx + 74, ry + 232], radius=10,
                            fill=base_rgb, outline=border_rgb)
-    draw.text((rx + 72, ry + 154), mixed_hex.upper(), font=f_small, fill=ink_soft_rgb)
+    draw.text((rx + 86, ry + 184), mixed_hex.upper(), font=f_small, fill=ink_soft_rgb)
     if delta_e is not None:
-        draw.text((rx + 72, ry + 174), f"ΔE00(点彩感知) = {delta_e}",
+        draw.text((rx + 86, ry + 208), f"ΔE00(点彩感知) = {delta_e}",
                   font=f_small, fill=ink_faint_rgb)
-    draw.text((rx, ry + 210), "* 远观整体色，非颗粒真实颜色",
+    draw.text((rx, ry + 252), "* 远观整体色，非颗粒真实颜色",
               font=f_small, fill=ink_faint_rgb)
-    extra_y = ry + 236
+    extra_y = ry + 282
     if accent_code:
         draw.text((rx, extra_y), f"含点缀杂色：{accent_code}",
                   font=f_small, fill=(150, 110, 40))
-        extra_y += 24
+        extra_y += 28
     if locked_codes:
         draw.text((rx, extra_y), f"锁定色：{', '.join(sorted(locked_codes))}",
                   font=f_small, fill=(80, 110, 150))
 
     by = legend_top
     draw.text((60, by), "配比（目标比例 / 实际颗粒占比）", font=f_label, fill=ink_rgb)
-    ly = by + 30
+    ly = by + 34
     for c in components:
         chip = _hex_to_rgb_tuple(c["HEX"])
-        draw.rounded_rectangle([60, ly, 82, ly + 22], radius=4, fill=chip,
+        draw.rounded_rectangle([60, ly, 90, ly + 28], radius=5, fill=chip,
                                outline=(170, 170, 170))
         real = realized_pct.get(c["色号"], c["比例"])
         tags = []
@@ -295,8 +295,8 @@ def draw_sample(mixed_hex, target_hex, components,
         if c["色号"] in locked_codes:
             tags.append("锁定")
         tag = f"（{'/'.join(tags)}）" if tags else ""
-        txt = f"{c['色号']}{tag}  目标 {c['比例']}%　实际 {real}%　{c['用量kg']}kg"
-        draw.text((92, ly + 2), txt, font=f_small, fill=ink_soft_rgb)
+        txt = f"{c['色号']}{tag}  目标 {c['比例']}%　实际 {real}%"
+        draw.text((102, ly + 3), txt, font=f_small, fill=ink_soft_rgb)
         ly += row_h
 
     draw.text((60, H - 24),
@@ -341,12 +341,12 @@ def build_svg(mixed_hex, target_hex, components,
     b64 = base64.b64encode(png_bytes).decode("ascii")
 
     n_rows = len(components)
-    row_h = 30
+    row_h = 38
     legend_top = py + S + 34
-    legend_h = 30 + n_rows * row_h
+    legend_h = 34 + n_rows * row_h
     footer_h = 34
     H = legend_top + legend_h + footer_h
-    W = 900
+    W = 980
 
     base_rgb = tuple(int(c) for c in hex_to_rgb(mixed_hex))
     target_rgb = tuple(int(c) for c in hex_to_rgb(target_hex))
@@ -404,31 +404,31 @@ def build_svg(mixed_hex, target_hex, components,
     # 右侧信息
     rx = px + S + 44
     ry = py + 2
-    parts.append(T(rx, ry + 16, 15, INK_SOFT, "目标色"))
-    parts.append(f'<rect x="{rx}" y="{ry+26}" width="62" height="62" rx="8" '
+    parts.append(T(rx, ry + 18, 18, INK_SOFT, "目标色"))
+    parts.append(f'<rect x="{rx}" y="{ry+34}" width="74" height="74" rx="10" '
                  f'fill="rgb{target_rgb}" stroke="{CARD_BORDER}"/>')
-    parts.append(T(rx + 72, ry + 52, 14, INK_SOFT, target_hex.upper()))
+    parts.append(T(rx + 86, ry + 60, 17, INK_SOFT, target_hex.upper()))
 
-    parts.append(T(rx, ry + 120, 15, INK_SOFT, "感知混合色"))
-    parts.append(f'<rect x="{rx}" y="{ry+132}" width="62" height="62" rx="8" '
+    parts.append(T(rx, ry + 142, 18, INK_SOFT, "感知混合色"))
+    parts.append(f'<rect x="{rx}" y="{ry+164}" width="74" height="74" rx="10" '
                  f'fill="rgb{base_rgb}" stroke="{CARD_BORDER}"/>')
-    parts.append(T(rx + 72, ry + 158, 14, INK_SOFT, mixed_hex.upper()))
+    parts.append(T(rx + 86, ry + 190, 17, INK_SOFT, mixed_hex.upper()))
     if delta_e is not None:
-        parts.append(T(rx + 72, ry + 178, 14, INK_FAINT,
+        parts.append(T(rx + 86, ry + 214, 17, INK_FAINT,
                       f"\u0394E00(点彩感知) = {delta_e}"))
-    parts.append(T(rx, ry + 214, 12.5, INK_FAINT, "* 远观整体色，非颗粒真实颜色"))
-    extra_y = ry + 240
+    parts.append(T(rx, ry + 258, 15, INK_FAINT, "* 远观整体色，非颗粒真实颜色"))
+    extra_y = ry + 288
     if accent_code:
-        parts.append(T(rx, extra_y, 14, "#966E28", f"含点缀杂色：{accent_code}"))
-        extra_y += 24
+        parts.append(T(rx, extra_y, 17, "#966E28", f"含点缀杂色：{accent_code}"))
+        extra_y += 28
     if locked_codes:
-        parts.append(T(rx, extra_y, 14, "#506E96",
+        parts.append(T(rx, extra_y, 17, "#506E96",
                       f"锁定色：{', '.join(sorted(locked_codes))}"))
 
     # 图例（矢量，逐色号动态铺开，不受行数限制）
     by = legend_top
-    parts.append(T(60, by + 14, 15, INK, "配比（目标比例 / 实际颗粒占比）", weight="600"))
-    ly = by + 30
+    parts.append(T(60, by + 16, 18, INK, "配比（目标比例 / 实际颗粒占比）", weight="600"))
+    ly = by + 34
     for c in components:
         chip_hex = c["HEX"]
         real = realized_pct.get(c["色号"], c["比例"])
@@ -438,11 +438,10 @@ def build_svg(mixed_hex, target_hex, components,
         if c["色号"] in locked_codes:
             tags.append("锁定")
         tag = f"（{'/'.join(tags)}）" if tags else ""
-        txt = (f"{c['色号']}{tag}  目标 {c['比例']}%　实际 {real}%　"
-              f"{c['用量kg']}kg")
-        parts.append(f'<rect x="60" y="{ly}" width="22" height="22" rx="4" '
+        txt = f"{c['色号']}{tag}  目标 {c['比例']}%　实际 {real}%"
+        parts.append(f'<rect x="60" y="{ly}" width="30" height="28" rx="5" '
                      f'fill="{chip_hex}" stroke="#AAAAAA"/>')
-        parts.append(T(92, ly + 16, 14, INK_SOFT, txt))
+        parts.append(T(102, ly + 20, 17, INK_SOFT, txt))
         ly += row_h
 
     parts.append(T(60, H - 16, 12.5, INK_FAINT,

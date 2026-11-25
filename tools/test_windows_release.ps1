@@ -1,0 +1,134 @@
+param(
+    [Parameter(Mandatory = $true)][string]$Dist,
+    [ValidateSet('Both', 'Lite', 'Full-Offline')][string]$Edition = 'Both'
+)
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+$originalPath = $env:PATH
+$originalLocalAppData = $env:LOCALAPPDATA
+$originalProxy = @($env:HTTP_PROXY, $env:HTTPS_PROXY, $env:ALL_PROXY, $env:NO_PROXY)
+$originalIndex = $env:ZT_PYPI_INDEX_URL
+$originalPipIndex = $env:PIP_INDEX_URL
+$originalPython = $env:ZT_PYTHON_EXE
+$originalAddress = $env:ZT_SERVER_ADDRESS
+$work = Join-Path ([System.IO.Path]::GetTempPath()) ('ZT Windows ' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $work | Out-Null
+$regression = Join-Path $PSScriptRoot 'test_app.py'
+
+function Invoke-Launch {
+    param([string]$Entry, [string[]]$Options)
+    & $Entry @Options
+    if ($LASTEXITCODE -ne 0) {
+        throw "Launcher exit $LASTEXITCODE [$Entry] $Options"
+    }
+}
+
+function Get-ActivePython {
+    $environment = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'ZTColorStudio\studio-v14\environments') -Directory
+    if (@($environment).Count -ne 1) { throw 'Expected a single environment key' }
+    $active = Get-Content -Raw -LiteralPath (Join-Path $environment.FullName 'active.json') | ConvertFrom-Json
+    return Join-Path $environment.FullName "$active\Scripts\python.exe"
+}
+
+function Test-Health {
+    param([string]$Executable)
+    $socket = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $socket.Start()
+    $port = $socket.LocalEndpoint.Port
+    $socket.Stop()
+    $server = Start-Process -FilePath $Executable -ArgumentList @('--headless', '--port', $port) -PassThru
+    $healthy = $false
+    try {
+        for ($i = 0; $i -lt 80; $i++) {
+            $server.Refresh()
+            if ($server.HasExited) { throw "Streamlit launcher exited $($server.ExitCode)" }
+            try {
+                $reply = Invoke-WebRequest -Uri "http://127.0.0.1:$port/_stcore/health" -NoProxy -TimeoutSec 2
+                if ($reply.StatusCode -eq 200 -and $reply.Content.Trim() -eq 'ok') {
+                    $healthy = $true
+                    break
+                }
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        if (!$healthy) { throw 'Streamlit health endpoint did not become ready' }
+    } finally {
+        if (!$server.HasExited) { & taskkill.exe /PID $server.Id /T /F | Out-Null }
+    }
+}
+
+try {
+    $expectedHashes = @{}
+    Get-Content -LiteralPath (Join-Path $Dist 'SHA256SUMS.txt') | ForEach-Object {
+        $digest, $file = $_ -split '  ', 2
+        $expectedHashes[$file] = $digest
+    }
+    $editions = if ($Edition -eq 'Both') { @('Full-Offline', 'Lite') } else { @($Edition) }
+    foreach ($mode in $editions) {
+        $zip = @(Get-ChildItem -LiteralPath $Dist -Filter "*-Windows-$mode.zip")
+        if ($zip.Count -ne 1) { throw "Expected one $mode archive" }
+        if ((Get-FileHash -LiteralPath $zip[0].FullName).Hash -ne $expectedHashes[$zip[0].Name]) { throw 'ZIP hash mismatch' }
+
+        $directory = Join-Path $work "$mode 渲染 测试"
+        Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $directory
+        $app = Join-Path $directory 'ZT-Color-Match-Studio'
+        $entry = Join-Path $app 'start.bat'
+        $env:LOCALAPPDATA = Join-Path $work "$mode LocalAppData"
+        New-Item -ItemType Directory -Path $env:LOCALAPPDATA | Out-Null
+        $env:ZT_PYTHON_EXE = $null
+        $env:ZT_SERVER_ADDRESS = '127.0.0.1'
+        if ($mode -eq 'Full-Offline') {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+            $env:HTTP_PROXY = 'http://127.0.0.1:1'
+            $env:HTTPS_PROXY = $env:HTTP_PROXY
+            $env:ALL_PROXY = $env:HTTP_PROXY
+            $env:NO_PROXY = 'localhost,127.0.0.1'
+            $env:PIP_INDEX_URL = 'https://example.invalid/simple'
+            $env:ZT_PYPI_INDEX_URL = $env:PIP_INDEX_URL
+            Invoke-Launch $entry @('--verify-offline')
+            $manifest = Get-Content -Raw -LiteralPath (Join-Path $app 'offline\manifest.json') | ConvertFrom-Json
+            $wheel = Join-Path (Join-Path $app 'offline') $manifest.wheels[0].path
+            Move-Item -LiteralPath $wheel -Destination "$wheel.missing"
+            try {
+                & $entry --check
+                if ($LASTEXITCODE -eq 0) { throw 'Incomplete offline package unexpectedly passed' }
+            } finally {
+                Move-Item -LiteralPath "$wheel.missing" -Destination $wheel
+            }
+        } else {
+            $env:PATH = $originalPath
+            $env:HTTP_PROXY, $env:HTTPS_PROXY, $env:ALL_PROXY, $env:NO_PROXY = $originalProxy
+            $env:PIP_INDEX_URL = $originalPipIndex
+            $env:ZT_PYPI_INDEX_URL = 'https://127.0.0.1:1/simple'
+        }
+
+        Invoke-Launch $entry @('--check')
+        $python = Get-ActivePython
+        Invoke-Launch $entry @('--check')
+        if ($python -ne (Get-ActivePython)) { throw "$mode did not reuse the environment" }
+        if ($mode -eq 'Full-Offline') {
+            & $python -I -m pip --disable-pip-version-check check
+            if ($LASTEXITCODE -ne 0) { throw 'pip check failed' }
+            & $python -I $regression $app
+            if ($LASTEXITCODE -ne 0) { throw 'Application regression failed' }
+        }
+        Test-Health (Join-Path $app 'ZTColorStudio.exe')
+        if ($mode -eq 'Full-Offline') {
+            $envParent = Join-Path $env:LOCALAPPDATA 'ZTColorStudio\studio-v14\environments'
+            Remove-Item -LiteralPath $envParent -Recurse -Force
+            Invoke-Launch $entry @('--check')
+            if (!(Test-Path -LiteralPath (Get-ActivePython))) { throw 'Offline environment was not rebuilt' }
+        }
+        Write-Host "$mode Windows smoke tests passed"
+    }
+} finally {
+    $env:PATH = $originalPath
+    $env:LOCALAPPDATA = $originalLocalAppData
+    $env:HTTP_PROXY, $env:HTTPS_PROXY, $env:ALL_PROXY, $env:NO_PROXY = $originalProxy
+    $env:ZT_PYPI_INDEX_URL = $originalIndex
+    $env:PIP_INDEX_URL = $originalPipIndex
+    $env:ZT_PYTHON_EXE = $originalPython
+    $env:ZT_SERVER_ADDRESS = $originalAddress
+    Write-Host "Smoke test directory $work"
+}
