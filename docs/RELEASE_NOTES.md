@@ -1,7 +1,7 @@
-# ZT Color Match Studio v14.1.2
+# ZT Color Match Studio v14.1.3
 
-本次修复 Windows 构建生成 CRLF 换行时，Full Offline 把合法的依赖哈希误判为无效的问题。
-本版沿用 v14.1.1 的 Streamlit 首次邮箱提示修复，继续使用已验证的本机环境。
+本版修复 GitHub Actions 给 Python 测试环境分配的目录过深，导致 Windows 无法加载 Pillow
+原生模块的问题。测试仍从包含中文与空格的位置启动，继续验证离线依赖与本机环境复用。
 
 两种 Windows 10 / 11 x64 发行包均包含
 批量配色、推荐方案 / 方案探索、手动配色、材料预览及 Excel / PNG / SVG 导出。

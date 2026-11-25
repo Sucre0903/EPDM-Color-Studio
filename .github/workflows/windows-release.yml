@@ -29,15 +29,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $ref = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'HEAD' }
           python tools/build_release.py --ref $ref --output dist
-      - name: Windows launch smoke and application regression
-        shell: pwsh
-        run: ./tools/test_windows_release.ps1 -Dist dist
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-release
           path: dist/*
           if-no-files-found: error
           compression-level: 0
+      - name: Windows launch smoke and application regression
+        shell: pwsh
+        run: ./tools/test_windows_release.ps1 -Dist dist
 
   draft:
     if: github.ref_type == 'tag'

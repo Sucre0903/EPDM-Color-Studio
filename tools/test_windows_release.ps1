@@ -12,7 +12,10 @@ $originalPipIndex = $env:PIP_INDEX_URL
 $originalPython = $env:ZT_PYTHON_EXE
 $originalAddress = $env:ZT_SERVER_ADDRESS
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('ZT Windows ' + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $work | Out-Null
+# Keep the app's Unicode/space path case separate from the Python DLL path.
+$runtimeBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $originalLocalAppData }
+$runtimeWork = Join-Path $runtimeBase ('zt-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $work, $runtimeWork | Out-Null
 $regression = Join-Path $PSScriptRoot 'test_app.py'
 
 function Invoke-Launch {
@@ -110,7 +113,8 @@ try {
         Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $directory
         $app = Join-Path $directory 'ZT-Color-Match-Studio'
         $entry = Join-Path $app 'start.bat'
-        $env:LOCALAPPDATA = Join-Path $work "$mode LocalAppData"
+        $editionDir = if ($mode -eq 'Full-Offline') { 'f' } else { 'l' }
+        $env:LOCALAPPDATA = Join-Path $runtimeWork $editionDir
         New-Item -ItemType Directory -Path $env:LOCALAPPDATA | Out-Null
         $env:ZT_PYTHON_EXE = $null
         $env:ZT_SERVER_ADDRESS = '127.0.0.1'
@@ -167,5 +171,6 @@ try {
     $env:PIP_INDEX_URL = $originalPipIndex
     $env:ZT_PYTHON_EXE = $originalPython
     $env:ZT_SERVER_ADDRESS = $originalAddress
-    Write-Host "Smoke test directory $work"
+    Write-Host "Smoke test extraction directory $work"
+    Write-Host "Smoke test runtime directory $runtimeWork"
 }
