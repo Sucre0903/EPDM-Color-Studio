@@ -26,21 +26,28 @@ func requireLocalDisk(folder string) error {
 }
 
 func initializationLock(home string) (*os.File, error) {
-	path := filepath.Join(home, "initialize.lock")
+	return lockFile(filepath.Join(home, "initialize.lock"), true, 10*time.Minute)
+}
+
+func lockFile(path string, exclusive bool, wait time.Duration) (*os.File, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(10 * time.Minute)
+	deadline := time.Now().Add(wait)
+	flags := uintptr(1) // LOCKFILE_FAIL_IMMEDIATELY
+	if exclusive {
+		flags |= 2 // LOCKFILE_EXCLUSIVE_LOCK
+	}
 	for {
 		var overlap syscall.Overlapped
-		ok, _, cause := lockFileEx.Call(file.Fd(), 3, 0, 1, 0, uintptr(unsafe.Pointer(&overlap)))
+		ok, _, cause := lockFileEx.Call(file.Fd(), flags, 0, 1, 0, uintptr(unsafe.Pointer(&overlap)))
 		if ok != 0 {
 			return file, nil
 		}
 		if cause != syscall.Errno(33) || time.Now().After(deadline) {
 			file.Close()
-			return nil, fmt.Errorf("获取初始化锁 [%s]：%w", path, cause)
+			return nil, fmt.Errorf("获取文件锁 [%s]：%w", path, cause)
 		}
 		time.Sleep(250 * time.Millisecond)
 	}

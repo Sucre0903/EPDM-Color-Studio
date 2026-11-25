@@ -103,12 +103,16 @@ func verifyAsset(base string, asset offlineFile) error {
 	return nil
 }
 
+func (s *studio) runtimeFolder() string {
+	return filepath.Join(s.home, "runtimes", "python-"+s.runtime.Version+"-"+s.runtime.SHA256[:12])
+}
+
 func (s *studio) managedRuntime(offlineArchive string) (string, error) {
-	runtimes := filepath.Join(s.home, "runtimes")
+	dest := s.runtimeFolder()
+	runtimes := filepath.Dir(dest)
 	if err := os.MkdirAll(runtimes, 0700); err != nil {
 		return "", err
 	}
-	dest := filepath.Join(runtimes, "python-"+s.runtime.Version+"-"+s.runtime.SHA256[:12])
 	python := filepath.Join(dest, "python.exe")
 	if _, err := os.Stat(dest); err == nil {
 		if err := s.probe(python, "base", s.runtime.Version); err == nil {

@@ -27,7 +27,7 @@ INDEX = "https://pypi.org/simple"
 COMMON_FILES = (
     "VERSION", "app.py", "branding.py", "color_utils.py", "database.py",
     "excel_export.py", "ratio_search.py", "sample_preview.py", "windows_runtime.py",
-    "requirements.txt", LOCK, "start.bat", "start.sh", "README.md",
+    "requirements.txt", LOCK, "start.bat", "uninstall.bat", "start.sh", "README.md",
     ".streamlit/config.toml", "assets/logo.png", "assets/inter.css",
     "assets/inter-OFL.txt", "data/fk_colors.csv", "docs/OFFLINE_INSTALL.md",
 )
@@ -237,7 +237,11 @@ def main():
             assets = {} if mode == "lite" else offline_assets(snapshot, workspace, runtime, args, tag, commit)
             filename = f"{PACKAGE_ROOT}-{tag}-Windows-{suffix}.zip"
             staged = workspace / filename
-            write_distribution(staged, snapshot, launcher, {"mode": mode, "version": tag, "commit": commit}, assets)
+            info = {
+                "mode": mode, "version": tag, "commit": commit,
+                "initial_library_sha256": sha256(snapshot / "data" / "fk_colors.csv"),
+            }
+            write_distribution(staged, snapshot, launcher, info, assets)
             pairs.append((staged, sha256(staged)))
         sums = []
         for staged, digest in pairs:

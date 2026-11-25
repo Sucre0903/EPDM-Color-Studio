@@ -97,6 +97,57 @@ function Test-Health {
     }
 }
 
+function New-MaintenanceFixture {
+    param([string]$App, [string]$Path)
+    New-Item -ItemType Directory -Path $Path | Out-Null
+    foreach ($name in @('ZTColorStudio.exe', 'distribution.json', 'app.py', 'start.bat', 'uninstall.bat')) {
+        Copy-Item -LiteralPath (Join-Path $App $name) -Destination $Path
+    }
+    $data = Join-Path $Path 'data'
+    New-Item -ItemType Directory -Path $data | Out-Null
+    Copy-Item -LiteralPath (Join-Path $App 'data\fk_colors.csv') -Destination $data
+}
+
+function Test-Maintenance {
+    param([string]$App)
+    $previousLocal = $env:LOCALAPPDATA
+    $env:LOCALAPPDATA = Join-Path $runtimeWork 'm'
+    try {
+        $appRoot = Join-Path $work 'uninstall copy'
+        New-MaintenanceFixture $App $appRoot
+        $old = Join-Path $work 'previous release'
+        $oldData = Join-Path $old 'data'
+        New-Item -ItemType Directory -Path $oldData | Out-Null
+        Set-Content -LiteralPath (Join-Path $oldData 'fk_colors.csv') -Value 'test color library'
+        Set-Content -LiteralPath (Join-Path $oldData 'history.db') -Value 'test history'
+        Invoke-Launch (Join-Path $appRoot 'start.bat') @('--import-data', $old)
+        $history = Join-Path $appRoot 'data\history.db'
+        if ((Get-Content -Raw -LiteralPath $history).Trim() -ne 'test history') { throw 'Data migration failed' }
+
+        $owned = Join-Path $env:LOCALAPPDATA 'ZTColorStudio\studio-v14\environments'
+        $outside = Join-Path $env:LOCALAPPDATA 'ExistingPython'
+        New-Item -ItemType Directory -Path $owned, $outside | Out-Null
+        'Y' | & (Join-Path $appRoot 'uninstall.bat') --keep-runtime
+        if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $appRoot) -or !(Test-Path -LiteralPath $owned)) {
+            throw 'Uninstall while retaining shared dependencies failed'
+        }
+        $backups = Join-Path $env:LOCALAPPDATA 'ZTColorStudio\backups'
+        $saved = Get-ChildItem -LiteralPath $backups -Directory
+        $history = Join-Path $saved.FullName 'data\history.db'
+        if ((Get-Content -Raw -LiteralPath $history).Trim() -ne 'test history') { throw 'Uninstall backup failed' }
+
+        New-MaintenanceFixture $App $appRoot
+        'Y' | & (Join-Path $appRoot 'uninstall.bat') --purge-runtime
+        if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $appRoot) -or (Test-Path -LiteralPath $owned) -or
+            !(Test-Path -LiteralPath $outside) -or !(Test-Path -LiteralPath $history)) {
+            throw 'Complete uninstall or preservation of other data failed'
+        }
+        Write-Host 'Data migration and both uninstall modes passed'
+    } finally {
+        $env:LOCALAPPDATA = $previousLocal
+    }
+}
+
 try {
     $expectedHashes = @{}
     Get-Content -LiteralPath (Join-Path $Dist 'SHA256SUMS.txt') | ForEach-Object {
@@ -104,6 +155,7 @@ try {
         $expectedHashes[$file] = $digest
     }
     $editions = if ($Edition -eq 'Both') { @('Full-Offline', 'Lite') } else { @($Edition) }
+    $fullLocal = $null
     foreach ($mode in $editions) {
         $zip = @(Get-ChildItem -LiteralPath $Dist -Filter "*-Windows-$mode.zip")
         if ($zip.Count -ne 1) { throw "Expected one $mode archive" }
@@ -144,6 +196,17 @@ try {
             $env:ZT_PYPI_INDEX_URL = 'https://127.0.0.1:1/simple'
         }
 
+        if ($mode -eq 'Lite' -and $fullLocal) {
+            $liteLocal = $env:LOCALAPPDATA
+            try {
+                $env:LOCALAPPDATA = $fullLocal
+                $previousPython = Get-ActivePython
+                Invoke-Launch $entry @('--check')
+                if ((Get-ActivePython) -ne $previousPython) { throw 'Lite did not reuse Full Offline dependencies' }
+            } finally {
+                $env:LOCALAPPDATA = $liteLocal
+            }
+        }
         Invoke-Launch $entry @('--check')
         $python = Get-ActivePython
         Invoke-Launch $entry @('--check')
@@ -160,9 +223,11 @@ try {
             Remove-Item -LiteralPath $envParent -Recurse -Force
             Invoke-Launch $entry @('--check')
             if (!(Test-Path -LiteralPath (Get-ActivePython))) { throw 'Offline environment was not rebuilt' }
+            $fullLocal = $env:LOCALAPPDATA
         }
         Write-Host "$mode Windows smoke tests passed"
     }
+    Test-Maintenance $app
 } finally {
     $env:PATH = $originalPath
     $env:LOCALAPPDATA = $originalLocalAppData

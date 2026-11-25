@@ -15,6 +15,10 @@ import (
 
 const officialIndex = "https://pypi.org/simple"
 
+func (s *studio) environmentFolder(mode string) string {
+	return filepath.Join(s.home, "environments", mode+"-"+s.lockHash[:16]+"-"+s.runtime.SHA256[:12])
+}
+
 func (s *studio) prepare() (string, error) {
 	s.log.Print("检查本机运行环境")
 	guard, err := initializationLock(s.home)
@@ -22,26 +26,27 @@ func (s *studio) prepare() (string, error) {
 		return "", err
 	}
 	defer guard.Close()
-	folder := filepath.Join(s.home, "environments", s.release.Mode+"-"+s.lockHash[:16]+"-"+s.runtime.SHA256[:12])
-	if err := os.MkdirAll(folder, 0700); err != nil {
-		return "", err
-	}
-	statePath := filepath.Join(folder, "active.json")
+	folder := s.environmentFolder(s.release.Mode)
 	expected := ""
 	if s.release.Mode == "full-offline" {
 		expected = s.runtime.Version
 	}
-	var active string
-	if err := readJSON(statePath, &active); err == nil &&
-		filepath.Base(active) == active && strings.HasPrefix(active, "env-") {
-		python := filepath.Join(folder, active, "Scripts", "python.exe")
-		if err := s.probe(python, "env", s.lockPath, expected); err == nil {
-			s.log.Print("复用已验证的本机环境")
-			return python, nil
-		} else {
-			s.log.Printf("已缓存环境需要修复：%v", err)
-		}
+	if python := s.reusablePython(folder, expected, false); python != "" {
+		s.log.Print("复用已验证的本机环境")
+		return python, nil
 	}
+	other := "full-offline"
+	if s.release.Mode == "full-offline" {
+		other = "lite"
+	}
+	if python := s.reusablePython(s.environmentFolder(other), s.runtime.Version, other == "lite"); python != "" {
+		s.log.Printf("复用 %s 已验证的本机环境", other)
+		return python, nil
+	}
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		return "", err
+	}
+	statePath := filepath.Join(folder, "active.json")
 
 	var offlineArchive string
 	if s.release.Mode == "full-offline" {
@@ -67,6 +72,52 @@ func (s *studio) prepare() (string, error) {
 		return "", err
 	}
 	return s.createEnvironment(folder, statePath, base, false, expected)
+}
+
+func activeGeneration(folder string) string {
+	var active string
+	if err := readJSON(filepath.Join(folder, "active.json"), &active); err != nil ||
+		filepath.Base(active) != active || !strings.HasPrefix(active, "env-") {
+		return ""
+	}
+	return active
+}
+
+func (s *studio) reusablePython(folder, expected string, managedOnly bool) string {
+	active := activeGeneration(folder)
+	if active == "" {
+		return ""
+	}
+	dir := filepath.Join(folder, active)
+	if managedOnly && !managedIsolatedVenv(dir, s.runtimeFolder()) {
+		return ""
+	}
+	python := filepath.Join(dir, "Scripts", "python.exe")
+	if err := s.probe(python, "env", s.lockPath, expected); err != nil {
+		s.log.Printf("已缓存环境需要修复：%v", err)
+		return ""
+	}
+	return python
+}
+
+func managedIsolatedVenv(dir, runtimeDir string) bool {
+	options := venvSettings(dir)
+	return strings.EqualFold(options["include-system-site-packages"], "false") &&
+		strings.EqualFold(filepath.Clean(options["home"]), filepath.Clean(runtimeDir))
+}
+
+func venvSettings(dir string) map[string]string {
+	data, err := os.ReadFile(filepath.Join(dir, "pyvenv.cfg"))
+	if err != nil {
+		return nil
+	}
+	options := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		if key, value, ok := strings.Cut(line, "="); ok {
+			options[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return options
 }
 
 func (s *studio) createEnvironment(folder, statePath, base string, reuse bool, expected string) (string, error) {

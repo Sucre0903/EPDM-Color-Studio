@@ -14,6 +14,7 @@
 
 **Windows 10 / 11 x64**：从 GitHub Release 选择 Lite 或 Full Offline，完整解压后双击
 `start.bat`。Lite 在缺少 Python 或依赖时首次联网，Full Offline 随包提供初始化资源。
+升级、迁移个人色库及历史记录、完全卸载可使用发行包内的维护入口。
 详见 [Windows 安装说明](docs/OFFLINE_INSTALL.md)。
 
 **Mac / Linux**：终端执行 `bash start.sh`。

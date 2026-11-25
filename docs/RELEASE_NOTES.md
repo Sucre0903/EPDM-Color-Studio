@@ -1,7 +1,7 @@
-# ZT Color Match Studio v14.1.3
+# ZT Color Match Studio v14.1.4
 
-本版修复 GitHub Actions 给 Python 测试环境分配的目录过深，导致 Windows 无法加载 Pillow
-原生模块的问题。测试仍从包含中文与空格的位置启动，继续验证离线依赖与本机环境复用。
+本版增加 Windows 卸载和升级维护。卸载可按需清理软件目录、应用管理的 Python 和依赖，
+同时备份个人色库和 SQLite 历史。升级可导入旧版数据，并复用已验证的兼容环境。
 
 两种 Windows 10 / 11 x64 发行包均包含
 批量配色、推荐方案 / 方案探索、手动配色、材料预览及 Excel / PNG / SVG 导出。
@@ -14,6 +14,6 @@
 完整解压后双击 `start.bat`。用 `SHA256SUMS.txt` 核对下载的 ZIP。
 运行环境保存在本机用户目录。如果 360 安全卫士或其他终端防护软件拦截安装，请将
 启动日志和发行包 SHA256 交给公司 IT，由 IT 核验并处理放行。
-升级旧版时保留 `data` 下自己的色库和历史记录。
+升级时在首次启动前导入旧版数据。卸载请双击 `uninstall.bat` 并核对删除范围。
 
 安装和故障排查见包内 `docs/OFFLINE_INSTALL.md`。

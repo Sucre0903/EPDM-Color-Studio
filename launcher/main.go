@@ -33,6 +33,13 @@ type runtimePin struct {
 
 type releaseInfo struct {
 	Mode, Version, Commit string
+	InitialLibrarySHA256  string `json:"initial_library_sha256"`
+}
+
+type launchOptions struct {
+	check, verify, headless bool
+	port                    int
+	importFrom, maintenance string
 }
 
 type studio struct {
@@ -46,22 +53,26 @@ type studio struct {
 var shaPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 
 func main() {
-	check := flag.Bool("check", false, "initialize and verify without starting the app")
-	verify := flag.Bool("verify-offline", false, "verify the offline archive and every wheel")
-	headless := flag.Bool("headless", false, "print the local URL without opening a browser")
-	port := flag.Int("port", 8501, "local starting port")
+	var options launchOptions
+	flag.BoolVar(&options.check, "check", false, "initialize and verify without starting the app")
+	flag.BoolVar(&options.verify, "verify-offline", false, "verify the offline archive and every wheel")
+	flag.BoolVar(&options.headless, "headless", false, "print the local URL without opening a browser")
+	flag.IntVar(&options.port, "port", 8501, "local starting port")
+	flag.StringVar(&options.importFrom, "import-data", "", "import data from an older installation or an uninstall backup")
+	flag.StringVar(&options.maintenance, "maintenance", "", "keep, purge, or prune local runtime files")
 	flag.Parse()
-	if *port < 1 || *port > 65535 || flag.NArg() != 0 {
+	if options.port < 1 || options.port > 65535 || flag.NArg() != 0 ||
+		(options.importFrom != "" && options.maintenance != "") {
 		fmt.Fprintln(os.Stderr, "无效启动参数。运行 start.bat -help 查看选项。")
 		os.Exit(2)
 	}
-	if err := run(*check, *verify, *headless, *port); err != nil {
+	if err := run(options); err != nil {
 		fmt.Fprintln(os.Stderr, "启动失败：", err)
 		os.Exit(1)
 	}
 }
 
-func run(check, verify, headless bool, port int) (result error) {
+func run(options launchOptions) (result error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -75,6 +86,33 @@ func run(check, verify, headless bool, port int) (result error) {
 		return err
 	}
 	s := studio{app: app, home: filepath.Join(local, "ZTColorStudio", "studio-v14")}
+	if err := readJSON(filepath.Join(app, "distribution.json"), &s.release); err != nil {
+		return err
+	}
+	if s.release.Version != buildVersion || s.release.Commit != buildCommit ||
+		(s.release.Mode != "lite" && s.release.Mode != "full-offline") {
+		return errors.New("发行标记与启动器不匹配，请重新完整解压发行包")
+	}
+	if err := json.Unmarshal(runtimeJSON, &s.runtime); err != nil {
+		return err
+	}
+	s.lockPath = filepath.Join(app, lockName)
+	if err := ensurePlainDirectory(filepath.Dir(s.home)); err != nil {
+		return err
+	}
+	maintenance := options.importFrom != "" || options.maintenance != ""
+	guard, err := lockFile(filepath.Join(filepath.Dir(s.home), "studio-v14.lock"), maintenance, 0)
+	if err != nil {
+		return fmt.Errorf("无法获取运行环境锁，请关闭所有 ZT Color Match Studio 窗口后重试：%w", err)
+	}
+	defer guard.Close()
+	if options.importFrom != "" {
+		return s.importData(options.importFrom)
+	}
+	if options.maintenance != "" {
+		return s.maintain(options.maintenance)
+	}
+
 	logDir := filepath.Join(s.home, "logs")
 	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return fmt.Errorf("创建日志目录 [%s]：%w", logDir, err)
@@ -96,22 +134,11 @@ func run(check, verify, headless bool, port int) (result error) {
 			}
 		}
 	}()
-	if err := readJSON(filepath.Join(app, "distribution.json"), &s.release); err != nil {
-		return err
-	}
-	if s.release.Version != buildVersion || s.release.Commit != buildCommit ||
-		(s.release.Mode != "lite" && s.release.Mode != "full-offline") {
-		return errors.New("发行标记与启动器不匹配，请重新完整解压发行包")
-	}
-	if err := json.Unmarshal(runtimeJSON, &s.runtime); err != nil {
-		return err
-	}
-	s.lockPath = filepath.Join(app, lockName)
 	if s.lockHash, err = hashFile(s.lockPath); err != nil {
 		return err
 	}
 	s.log.Printf("ZT Color Match Studio %s · %s · Python %s (x64)", s.release.Version, s.release.Mode, s.runtime.Version)
-	if verify {
+	if options.verify {
 		if s.release.Mode != "full-offline" {
 			return errors.New("仅 Full Offline 包支持离线校验")
 		}
@@ -124,17 +151,17 @@ func run(check, verify, headless bool, port int) (result error) {
 		return err
 	}
 	s.log.Printf("环境就绪（%s） [%s]", time.Since(start).Round(time.Second), python)
-	if check {
+	if options.check {
 		return nil
 	}
 	address := os.Getenv("ZT_SERVER_ADDRESS")
 	if address == "" {
 		address = "127.0.0.1"
 	}
-	s.log.Printf("启动 Streamlit，浏览器地址 http://localhost:%d", port)
+	s.log.Printf("启动 Streamlit，浏览器地址 http://localhost:%d", options.port)
 	cmd := s.pythonCommand(context.Background(), python, "-m", "streamlit", "run", "app.py",
-		"--server.address", address, "--server.port", fmt.Sprint(port),
-		"--server.headless", fmt.Sprint(headless), "--browser.serverAddress", "localhost",
+		"--server.address", address, "--server.port", fmt.Sprint(options.port),
+		"--server.headless", fmt.Sprint(options.headless), "--browser.serverAddress", "localhost",
 		"--server.showEmailPrompt", "false", "--browser.gatherUsageStats", "false")
 	cmd.Stdout, cmd.Stderr = s.out, s.out
 	if err := cmd.Run(); err != nil {
