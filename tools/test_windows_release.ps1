@@ -113,7 +113,7 @@ function Test-Maintenance {
     $previousLocal = $env:LOCALAPPDATA
     $env:LOCALAPPDATA = Join-Path $runtimeWork 'm'
     try {
-        $appRoot = Join-Path $work 'uninstall copy'
+        $appRoot = Join-Path $work 'uninstall 渲染 (test)'
         New-MaintenanceFixture $App $appRoot
         $old = Join-Path $work 'previous release'
         $oldData = Join-Path $old 'data'
@@ -127,20 +127,59 @@ function Test-Maintenance {
         $owned = Join-Path $env:LOCALAPPDATA 'ZTColorStudio\studio-v14\environments'
         $outside = Join-Path $env:LOCALAPPDATA 'ExistingPython'
         New-Item -ItemType Directory -Path $owned, $outside | Out-Null
-        'Y' | & (Join-Path $appRoot 'uninstall.bat') --keep-runtime
-        if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $appRoot) -or !(Test-Path -LiteralPath $owned)) {
-            throw 'Uninstall while retaining shared dependencies failed'
-        }
+        $marker = Join-Path $owned 'shared-runtime.txt'
+        Set-Content -LiteralPath $marker -Value 'existing runtime'
         $backups = Join-Path $env:LOCALAPPDATA 'ZTColorStudio\backups'
-        $saved = Get-ChildItem -LiteralPath $backups -Directory
-        $history = Join-Path $saved.FullName 'data\history.db'
-        if ((Get-Content -Raw -LiteralPath $history).Trim() -ne 'test history') { throw 'Uninstall backup failed' }
+        'N' | & (Join-Path $appRoot 'uninstall.bat') --purge-runtime
+        if ($LASTEXITCODE -eq 0 -or !(Test-Path -LiteralPath $history) -or
+            !(Test-Path -LiteralPath $marker) -or (Test-Path -LiteralPath $backups)) {
+            throw 'Cancellation must preserve the app and shared runtime without creating a backup'
+        }
+
+        'Y' | & (Join-Path $appRoot 'uninstall.bat') --keep-runtime
+        $keepExit = $LASTEXITCODE
+        $appExists = Test-Path -LiteralPath $appRoot
+        $runtimeKept = Test-Path -LiteralPath $marker
+        if ($keepExit -ne 0 -or $appExists -or !$runtimeKept) {
+            throw "Keep-runtime uninstall: exit=$keepExit appExists=$appExists runtimeKept=$runtimeKept"
+        }
+        $saved = @(Get-ChildItem -LiteralPath $backups -Directory)
+        if ($saved.Count -ne 1) { throw "Expected one backup, found $($saved.Count)" }
+        $history = Join-Path $saved[0].FullName 'data\history.db'
+        foreach ($name in @('history.db', 'fk_colors.csv')) {
+            $original = Get-FileHash -LiteralPath (Join-Path $oldData $name)
+            $backup = Get-FileHash -LiteralPath (Join-Path $saved[0].FullName "data\$name")
+            if ($backup.Hash -ne $original.Hash) { throw "Backup differs from original: $name" }
+        }
 
         New-MaintenanceFixture $App $appRoot
         'Y' | & (Join-Path $appRoot 'uninstall.bat') --purge-runtime
-        if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $appRoot) -or (Test-Path -LiteralPath $owned) -or
-            !(Test-Path -LiteralPath $outside) -or !(Test-Path -LiteralPath $history)) {
-            throw 'Complete uninstall or preservation of other data failed'
+        $purgeExit = $LASTEXITCODE
+        $appExists = Test-Path -LiteralPath $appRoot
+        $runtimeExists = Test-Path -LiteralPath (Split-Path -Parent $owned)
+        $outsideKept = Test-Path -LiteralPath $outside
+        $backupKept = Test-Path -LiteralPath $history
+        if ($purgeExit -ne 0 -or $appExists -or $runtimeExists -or !$outsideKept -or !$backupKept) {
+            throw "Purge uninstall: exit=$purgeExit appExists=$appExists runtimeExists=$runtimeExists outsideKept=$outsideKept backupKept=$backupKept"
+        }
+        $afterPurge = @(Get-ChildItem -LiteralPath $backups -Directory | Where-Object { $_.FullName -ne $saved[0].FullName })
+        if ($afterPurge.Count -ne 1) { throw 'Purge must create its own backup' }
+        $backupCsv = Get-FileHash -LiteralPath (Join-Path $afterPurge[0].FullName 'data\fk_colors.csv')
+        if ($backupCsv.Hash -ne (Get-FileHash -LiteralPath (Join-Path $App 'data\fk_colors.csv')).Hash) {
+            throw 'Purge backup differs from its source'
+        }
+
+        # Windows must report failure when a file prevents removing the directory.
+        New-MaintenanceFixture $App $appRoot
+        $lockedPath = Join-Path $appRoot 'busy.txt'
+        $handle = [IO.File]::Open($lockedPath, 'CreateNew', 'ReadWrite', 'None')
+        try {
+            'Y' | & (Join-Path $appRoot 'uninstall.bat') --keep-runtime
+            if ($LASTEXITCODE -eq 0 -or !(Test-Path -LiteralPath $lockedPath)) {
+                throw 'Uninstall reported success despite a locked file'
+            }
+        } finally {
+            $handle.Dispose()
         }
         Write-Host 'Data migration and both uninstall modes passed'
     } finally {

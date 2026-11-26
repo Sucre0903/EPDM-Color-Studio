@@ -1,6 +1,6 @@
-# ZT Color Match Studio v14.1.4
+# ZT Color Match Studio v14.1.5
 
-本版增加 Windows 卸载和升级维护。卸载可按需清理软件目录、应用管理的 Python 和依赖，
+本版修复 Windows 卸载在成功删除应用目录后仍可能返回失败的问题。卸载可按需清理软件目录、应用管理的 Python 和依赖，
 同时备份个人色库和 SQLite 历史。升级可导入旧版数据，并复用已验证的兼容环境。
 
 两种 Windows 10 / 11 x64 发行包均包含

@@ -17,19 +17,18 @@ if errorlevel 1 (
   exit /b 1
 )
 for %%I in ("%~dp0.") do set "ZT_UNINSTALL_ROOT=%%~fI"
-cd /d "%TEMP%" || (
-  echo Could not move to the temporary folder. Delete "%ZT_UNINSTALL_ROOT%" from Explorer.
-  if "%~1"=="" pause
-  exit /b 1
-)
-(
-  rmdir /s /q "%ZT_UNINSTALL_ROOT%"
+rem Unwind this batch frame before removing the directory that contains it.
+rem cmd parses the complete group (including the path and arguments) first.
+rem Use a child cmd to return a status without exiting a caller's batch file.
+(goto) 2>nul & (
+  cd /d "%TEMP%" && rmdir /s /q "%ZT_UNINSTALL_ROOT%"
   if exist "%ZT_UNINSTALL_ROOT%\" (
     echo Could not remove "%ZT_UNINSTALL_ROOT%". Close any open files and delete this folder.
     if "%~1"=="" pause
-    exit /b 1
+    "%SystemRoot%\System32\cmd.exe" /d /c exit 1
+  ) else (
+    echo Application folder removed.
+    if "%~1"=="" pause
+    "%SystemRoot%\System32\cmd.exe" /d /c exit 0
   )
-  echo Application folder removed.
-  if "%~1"=="" pause
-  exit /b 0
 )
