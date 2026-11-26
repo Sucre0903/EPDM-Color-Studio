@@ -1,6 +1,6 @@
 # 构建与发布
 
-本次版本为 `v14.1.5`。发布包必须从同一提交生成。构建脚本只读取 Git 对象中的文件，
+本次版本为 `v14.1.6`。发布包必须从同一提交生成。构建脚本只读取 Git 对象中的文件，
 工作目录的未提交改动不会进入 ZIP。
 
 ## 构建
@@ -9,7 +9,7 @@
 
 ```powershell
 python -m pip install -r tools/build-requirements.txt
-python tools/build_release.py --ref v14.1.5 --output dist
+python tools/build_release.py --ref v14.1.6 --output dist
 ```
 
 默认生成 Lite、Full Offline 与包含两个 ZIP 的 SHA256 文件。需要独立构建时可以加
@@ -28,12 +28,12 @@ SHA256 更新锁文件。核对 PyPI 文件的摘要、许可和撤回状态。P
 如果使用交付的 Git bundle，请在目标仓库克隆中核验并导入：
 
 ```powershell
-git bundle verify C:\path\ZT-Color-Match-Studio-v14.1.5-Git.bundle
-git fetch C:\path\ZT-Color-Match-Studio-v14.1.5-Git.bundle refs/tags/v14.1.5:refs/tags/v14.1.5
+git bundle verify C:\path\ZT-Color-Match-Studio-v14.1.6-Git.bundle
+git fetch C:\path\ZT-Color-Match-Studio-v14.1.6-Git.bundle refs/tags/v14.1.6:refs/tags/v14.1.6
 git switch main
-git merge --ff-only v14.1.5
+git merge --ff-only v14.1.6
 git push origin main
-git push origin refs/tags/v14.1.5
+git push origin refs/tags/v14.1.6
 ```
 
 如果目标主分支已有后续提交，检查差异并合入后重新打包，由实际发布提交创建标签。

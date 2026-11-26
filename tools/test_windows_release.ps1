@@ -174,6 +174,7 @@ function Test-Maintenance {
         $lockedPath = Join-Path $appRoot 'busy.txt'
         $handle = [IO.File]::Open($lockedPath, 'CreateNew', 'ReadWrite', 'None')
         try {
+            Write-Host 'Testing a locked busy.txt; the uninstaller should report a failure here.'
             'Y' | & (Join-Path $appRoot 'uninstall.bat') --keep-runtime
             if ($LASTEXITCODE -eq 0 -or !(Test-Path -LiteralPath $lockedPath)) {
                 throw 'Uninstall reported success despite a locked file'
@@ -278,3 +279,8 @@ try {
     Write-Host "Smoke test extraction directory $work"
     Write-Host "Smoke test runtime directory $runtimeWork"
 }
+
+# The last native exit code belongs to the intentional locked-file failure.
+# A terminating assertion or cleanup error skips this success path.
+Write-Host 'All Windows release checks passed.'
+exit 0
